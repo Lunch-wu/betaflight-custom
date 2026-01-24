@@ -154,3 +154,154 @@ You can find our release [here](https://github.com/betaflight/betaflight/release
 Betaflight is software that is **open source** and is available free of charge without warranty to all users.
 
 For a complete list of contributors (past and present) see [Github](https://github.com/betaflight/betaflight/graphs/contributors).
+
+
+---
+
+## 本地编译指南 (Local Build Guide)
+
+本文档记录了在本地环境中编译 Betaflight 固件的完整步骤和环境配置要求。
+
+### 环境要求
+
+| 组件 | 版本要求 | 说明 |
+| --- | --- | --- |
+| **操作系统** | Linux (推荐 Ubuntu/Debian/WSL2) | Windows 用户推荐使用 WSL2 |
+| **ARM GCC 工具链** | 13.3.1 | arm-none-eabi-gcc |
+| **Git** | 2.x+ | 版本控制 |
+| **Make** | 4.x+ | 构建工具 |
+| **Python** | 3.x | 部分脚本依赖 |
+
+### 快速开始
+
+#### 1. 克隆仓库
+
+```bash
+git clone https://github.com/betaflight/betaflight.git
+cd betaflight
+```
+
+#### 2. 切换到目标版本
+
+```bash
+# 查看可用版本
+git fetch origin --tags
+git tag --sort=-v:refname | head -10
+
+# 切换到最新稳定版本
+git checkout 2025.12.1
+```
+
+#### 3. 安装 ARM 工具链
+
+Betaflight 提供了自动安装脚本，会将工具链安装到 `tools/` 目录：
+
+```bash
+make arm_sdk_install
+```
+
+> **注意**: 如果在中国大陆网络环境下载缓慢，可设置代理：
+> ```bash
+> export http_proxy="http://127.0.0.1:10808"
+> export https_proxy="http://127.0.0.1:10808"
+> make arm_sdk_install
+> ```
+
+#### 4. 初始化配置
+
+```bash
+make configs
+```
+
+此命令会拉取 `src/config` 子模块，包含所有目标板的配置文件。
+
+#### 5. 验证工具链
+
+```bash
+make arm_sdk_version
+```
+
+预期输出：
+```
+arm-none-eabi-gcc (Arm GNU Toolchain 13.3.Rel1) 13.3.1 20240614
+```
+
+### 编译固件
+
+#### 查看可用目标
+
+```bash
+make targets
+```
+
+主要输出信息：
+- **Platforms**: 支持的平台 (APM32, AT32, PICO, SIMULATOR, STM32)
+- **Valid targets**: 所有有效的目标板
+- **Built targets**: CI 编译的目标板
+
+#### 编译指定目标
+
+使用 `CONFIG` 参数指定目标板配置：
+
+```bash
+# 编译 MATEKF405TE (基于 STM32F405)
+make CONFIG=MATEKF405TE
+
+# 编译其他 F405 目标板
+make CONFIG=MATEKF405SE
+make CONFIG=BETAFPVF405
+```
+
+#### 常用 STM32F405 目标板
+
+| 目标板 | 制造商 | 说明 |
+| --- | --- | --- |
+| MATEKF405TE | Matek | 支持 SD 卡和 GPS |
+| MATEKF405SE | Matek | 标准版 |
+| BETAFPVF405 | BetaFPV | 微型飞控 |
+| SPEEDYBEEF405V4 | SpeedyBee | 集成 4in1 ESC |
+| FOXEERF405V2 | Foxeer | 竞速飞控 |
+
+#### 编译输出
+
+编译成功后，固件文件位于 `obj/` 目录：
+
+```
+obj/betaflight_2025.12.1_STM32F405_MATEKF405TE.hex
+```
+
+### 编译选项
+
+| 命令 | 说明 |
+| --- | --- |
+| `make CONFIG=<target>` | 编译指定目标的 HEX 文件 |
+| `make CONFIG=<target> binary` | 编译 BIN 文件 |
+| `make CONFIG=<target> hex` | 编译 HEX 文件 |
+| `make clean` | 清理编译产物 |
+| `make help` | 查看帮助信息 |
+
+### 常见问题
+
+#### Q: 提示 arm-none-eabi-gcc 版本不匹配
+
+运行 `make arm_sdk_install` 安装正确版本的工具链。
+
+#### Q: 提示 src/config 不存在
+
+运行 `make configs` 初始化配置子模块。
+
+#### Q: 编译时内存不足
+
+尝试限制并行编译数量：
+```bash
+make CONFIG=<target> -j4
+```
+
+### 编译验证记录
+
+- **日期**: 2026-01-24
+- **版本**: 2025.12.1
+- **目标板**: MATEKF405TE (STM32F405)
+- **工具链**: arm-none-eabi-gcc 13.3.1
+- **状态**: ✅ 编译成功
+- **固件大小**: FLASH1 使用率 49.91%, RAM 使用率 65.99%
