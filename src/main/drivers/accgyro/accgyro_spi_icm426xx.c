@@ -316,12 +316,14 @@ uint8_t icm426xxSpiDetect(const extDevice_t *dev)
 void icm426xxAccInit(accDev_t *acc)
 {
     switch (acc->mpuDetectionResult.sensor) {
-    case IIM_42653_SPI:
-    case IIM_42652_SPI:
-        acc->acc_1G = 512 * 2; // Accel scale 32g (1024 LSB/g)
+    case IIM_42653_SPI:  // IIM42653: ±32g (1024 LSB/g)
+        acc->acc_1G = 512 * 2;
         break;
+    case ICM_42605_SPI:
+    case ICM_42688P_SPI:
+    case IIM_42652_SPI:  // IIM42652: ±16g (2048 LSB/g), same as ICM42688P
     default:
-        acc->acc_1G = 512 * 4; // Accel scale 16g (2048 LSB/g)
+        acc->acc_1G = 512 * 4;
         break;
     }
 }
@@ -438,10 +440,10 @@ bool icm426xxSpiGyroDetect(gyroDev_t *gyro)
     switch (gyro->mpuDetectionResult.sensor) {
     case ICM_42605_SPI:
     case ICM_42688P_SPI:
+    case IIM_42652_SPI:  // IIM42652: ±2000dps (same as ICM42688P)
         gyro->scale = GYRO_SCALE_2000DPS;
         break;
-    case IIM_42652_SPI:
-    case IIM_42653_SPI:
+    case IIM_42653_SPI:  // IIM42653: ±4000dps (high dynamic range version)
         gyro->scale = GYRO_SCALE_4000DPS;
         break;
     default:
