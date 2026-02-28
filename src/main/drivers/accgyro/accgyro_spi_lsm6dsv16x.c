@@ -342,14 +342,15 @@
 #define LSM6DSV_CTRL6_LPF1_G_BW_6                       6   // ~28.8Hz @7.68kHz, ~30Hz @8kHz
 #define LSM6DSV_CTRL6_LPF1_G_BW_7                       7   // Narrowest: ~14.4Hz @7.68kHz, ~15Hz @8kHz
 
-#define LSM6DSV_CTRL6_FS_G_MASK                         0x0f
+#define LSM6DSV_CTRL6_FS_G_MASK                         0x07
 #define LSM6DSV_CTRL6_FS_G_SHIFT                        0
+#define LSM6DSV_CTRL6_RESERVED_BIT3_MUST_BE_ONE        0x08
 #define LSM6DSV_CTRL6_FS_G_125DPS                       0x00
 #define LSM6DSV_CTRL6_FS_G_250DPS                       0x01
 #define LSM6DSV_CTRL6_FS_G_500DPS                       0x02
 #define LSM6DSV_CTRL6_FS_G_1000DPS                      0x03
 #define LSM6DSV_CTRL6_FS_G_2000DPS                      0x04
-#define LSM6DSV_CTRL6_FS_G_4000DPS                      0xc0
+#define LSM6DSV_CTRL6_FS_G_4000DPS                      0x05
 
 // Control register 7 (R/W)
 #define LSM6DSV_CTRL7                       0x16
@@ -869,24 +870,32 @@
 
 uint8_t lsm6dsk320xSpiDetect(const extDevice_t *dev)
 {
-    const uint8_t whoAmI = spiReadRegMsk(dev, LSM6DSV_WHO_AM_I);
+    uint8_t attemptsRemaining = 20;
+    do {
+        delay(1);
+        const uint8_t whoAmI = spiReadRegMsk(dev, LSM6DSV_WHO_AM_I);
 
-    if (whoAmI != LSM6DSK320X_WHO_AM_I_CONST) {
-        return MPU_NONE;
-    }
+        if (whoAmI == LSM6DSK320X_WHO_AM_I_CONST) {
+            return LSM6DSK320X_SPI;
+        }
+    } while (attemptsRemaining--);
 
-    return LSM6DSK320X_SPI;
+    return MPU_NONE;
 }
 
 uint8_t lsm6dsv16xSpiDetect(const extDevice_t *dev)
 {
-    const uint8_t whoAmI = spiReadRegMsk(dev, LSM6DSV_WHO_AM_I);
+    uint8_t attemptsRemaining = 20;
+    do {
+        delay(1);
+        const uint8_t whoAmI = spiReadRegMsk(dev, LSM6DSV_WHO_AM_I);
 
-    if (whoAmI != LSM6DSV16X_WHO_AM_I_CONST) {
-        return MPU_NONE;
-    }
+        if (whoAmI == LSM6DSV16X_WHO_AM_I_CONST) {
+            return LSM6DSV16X_SPI;
+        }
+    } while (attemptsRemaining--);
 
-    return LSM6DSV16X_SPI;
+    return MPU_NONE;
 }
 
 static void lsm6dsv16xAccInit(accDev_t *acc)
@@ -977,11 +986,11 @@ static void lsm6dsk320xGyroInit(gyroDev_t *gyro)
     const extDevice_t *dev = &gyro->dev;
     // Set default LPF1 filter bandwidth to be as close as possible to MPU6000's 250Hz cutoff
     uint8_t lsm6dsk320xLPF1BandwidthOptions[GYRO_HARDWARE_LPF_COUNT] = {
-            [GYRO_HARDWARE_LPF_NORMAL] = LSM6DSV_CTRL6_FS_G_BW_288HZ,
-            [GYRO_HARDWARE_LPF_OPTION_1] = LSM6DSV_CTRL6_FS_G_BW_157HZ,
-            [GYRO_HARDWARE_LPF_OPTION_2] = LSM6DSV_CTRL6_FS_G_BW_215HZ,
+            [GYRO_HARDWARE_LPF_NORMAL] = LSM6DSV_CTRL6_LPF1_G_BW_0,       // ~293Hz @8kHz
+            [GYRO_HARDWARE_LPF_OPTION_1] = LSM6DSV_CTRL6_LPF1_G_BW_2,     // ~162Hz @8kHz
+            [GYRO_HARDWARE_LPF_OPTION_2] = LSM6DSV_CTRL6_LPF1_G_BW_1,     // ~222Hz @8kHz
 #ifdef USE_GYRO_DLPF_EXPERIMENTAL
-            [GYRO_HARDWARE_LPF_EXPERIMENTAL] = LSM6DSV_CTRL6_FS_G_BW_455HZ
+            [GYRO_HARDWARE_LPF_EXPERIMENTAL] = LSM6DSV_CTRL6_LPF1_G_BW_3  // ~424Hz @8kHz
 #endif
     };
 
@@ -990,9 +999,13 @@ static void lsm6dsk320xGyroInit(gyroDev_t *gyro)
     // Perform a software reset
     spiWriteReg(dev, LSM6DSV_CTRL3, LSM6DSV_CTRL3_SW_RESET);
 
-    // Wait for the device to be ready
-    // while (spiReadRegMsk(dev, LSM6DSV_CTRL3) & LSM6DSV_CTRL3_SW_RESET) {}
-    delay(10);
+    // Wait for the device to be ready.
+    uint8_t resetAttemptsRemaining = 50;
+    while ((spiReadRegMsk(dev, LSM6DSV_CTRL3) & LSM6DSV_CTRL3_SW_RESET) && resetAttemptsRemaining--) {
+        delay(1);
+    }
+    // Give the sensor some extra stabilization time after reset.
+    delay(35);
 
     // Autoincrement register address when doing block SPI reads and update continuously
     spiWriteReg(dev, LSM6DSV_CTRL3, LSM6DSV_CTRL3_IF_INC | LSM6DSV_CTRL3_BDU);      /*BDU bit need to be set*/
@@ -1021,7 +1034,8 @@ static void lsm6dsk320xGyroInit(gyroDev_t *gyro)
                                     LSM6DSV_CTRL6_LPF1_G_BW_SHIFT) |
                 LSM6DSV_ENCODE_BITS(LSM6DSV_CTRL6_FS_G_2000DPS,
                                     LSM6DSV_CTRL6_FS_G_MASK,
-                                    LSM6DSV_CTRL6_FS_G_SHIFT));
+                                    LSM6DSV_CTRL6_FS_G_SHIFT) |
+                LSM6DSV_CTRL6_RESERVED_BIT3_MUST_BE_ONE);
 
     // Enable the accelerometer odr at 1kHz, in high accuracy
     spiWriteReg(dev, LSM6DSV_CTRL1,
@@ -1078,8 +1092,11 @@ static void lsm6dsv16xGyroInit(gyroDev_t *gyro)
     // Perform a software reset
     spiWriteReg(dev, LSM6DSV_CTRL3, LSM6DSV_CTRL3_SW_RESET);
 
-    // Wait for the device to be ready
-    while (spiReadRegMsk(dev, LSM6DSV_CTRL3) & LSM6DSV_CTRL3_SW_RESET) {}
+    // Wait for the device to be ready (with timeout protection).
+    uint8_t resetAttemptsRemaining = 50;
+    while ((spiReadRegMsk(dev, LSM6DSV_CTRL3) & LSM6DSV_CTRL3_SW_RESET) && resetAttemptsRemaining--) {
+        delay(1);
+    }
 
     // Wait for device to stabilize after reset (datasheet says gyro needs 30ms turn-on time)
     delay(35);
@@ -1115,7 +1132,8 @@ static void lsm6dsv16xGyroInit(gyroDev_t *gyro)
                                     LSM6DSV_CTRL6_LPF1_G_BW_SHIFT) |
                 LSM6DSV_ENCODE_BITS(LSM6DSV_CTRL6_FS_G_2000DPS,
                                     LSM6DSV_CTRL6_FS_G_MASK,
-                                    LSM6DSV_CTRL6_FS_G_SHIFT));
+                                    LSM6DSV_CTRL6_FS_G_SHIFT) |
+                LSM6DSV_CTRL6_RESERVED_BIT3_MUST_BE_ONE);
 
     // Enable the gyro digital LPF1 filter
     spiWriteReg(dev, LSM6DSV_CTRL7, LSM6DSV_CTRL7_LPF1_G_EN);
