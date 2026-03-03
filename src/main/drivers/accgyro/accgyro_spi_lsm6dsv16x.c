@@ -28,9 +28,10 @@
 
 #include "accgyro_spi_lsm6dsv16x.h"
 
+#include "build/debug.h"
+
 #include "drivers/time.h"
 #include "sensors/gyro.h"
-#include "drivers/time.h"
 
 /* See datasheet
  *
@@ -483,17 +484,17 @@
 #define LSM6DSV_UI_OUTZ_L_G_OIS_EIS         0x32
 #define LSM6DSV_UI_OUTZ_H_G_OIS_EIS         0x33
 
-// Linear acceleration sensor X-axis output register (R)
-#define UI_OUTX_L_A_OIS_DualC               0x34
-#define UI_OUTX_H_A_OIS_DualC               0x35
+// High-G accelerometer X-axis output register (R)
+#define LSM6DSV_UI_OUTX_L_A_OIS_HG          0x34
+#define LSM6DSV_UI_OUTX_H_A_OIS_HG          0x35
 
-// Linear acceleration sensor Y-axis output register (R)
-#define UI_OUTY_L_A_OIS_DualC               0x36
-#define UI_OUTY_H_A_OIS_DualC               0x37
+// High-G accelerometer Y-axis output register (R)
+#define LSM6DSV_UI_OUTY_L_A_OIS_HG          0x36
+#define LSM6DSV_UI_OUTY_H_A_OIS_HG          0x37
 
-// Linear acceleration sensor Z-axis output register (R)
-#define UI_OUTZ_L_A_OIS_DualC               0x38
-#define UI_OUTZ_H_A_OIS_DualC               0x39
+// High-G accelerometer Z-axis output register (R)
+#define LSM6DSV_UI_OUTZ_L_A_OIS_HG          0x38
+#define LSM6DSV_UI_OUTZ_H_A_OIS_HG          0x39
 
 // Analog hub and Qvar data output register (R)
 #define LSM6DSV_AH_QVAR_OUT_L               0x3A
@@ -577,7 +578,31 @@
 #define LSM6DSV_MLC_STATUS_MAINPAGE_IS_MLC2                 0x02
 #define LSM6DSV_MLC_STATUS_MAINPAGE_IS_MLC1                 0x01
 
-// RESERVED - 4C-4E
+// High-G wake-up source register (R/W)
+#define LSM6DSV_HG_WAKE_UP_SRC              0x4C
+
+// High-G accelerometer control register 2 (R/W)
+#define LSM6DSV_CTRL2_XL_HG                 0x4D
+
+// High-G accelerometer control register 1 (R/W)
+#define LSM6DSV_CTRL1_XL_HG                 0x4E
+#define LSM6DSV_CTRL1_XL_HG_REGOUT_EN                  0x80
+#define LSM6DSV_CTRL1_XL_HG_USR_OFF_ON_OUT              0x40
+#define LSM6DSV_CTRL1_XL_HG_ODR_MASK                    0x38
+#define LSM6DSV_CTRL1_XL_HG_ODR_SHIFT                   3
+#define LSM6DSV_CTRL1_XL_HG_ODR_POWERDOWN               0
+#define LSM6DSV_CTRL1_XL_HG_ODR_480HZ                   3
+#define LSM6DSV_CTRL1_XL_HG_ODR_960HZ                   4
+#define LSM6DSV_CTRL1_XL_HG_ODR_1920HZ                  5
+#define LSM6DSV_CTRL1_XL_HG_ODR_3840HZ                  6
+#define LSM6DSV_CTRL1_XL_HG_ODR_7680HZ                  7
+#define LSM6DSV_CTRL1_XL_HG_FS_MASK                     0x07
+#define LSM6DSV_CTRL1_XL_HG_FS_SHIFT                    0
+#define LSM6DSV_CTRL1_XL_HG_FS_32G                      0
+#define LSM6DSV_CTRL1_XL_HG_FS_64G                      1
+#define LSM6DSV_CTRL1_XL_HG_FS_128G                     2
+#define LSM6DSV_CTRL1_XL_HG_FS_256G                     3
+#define LSM6DSV_CTRL1_XL_HG_FS_320G                     4
 
 // Internal frequency register (R)
 #define LSM6DSV_INTERNAL_FREQ_FINE          0x4F
@@ -904,6 +929,12 @@ static void lsm6dsv16xAccInit(accDev_t *acc)
     acc->acc_1G = 512 * 4;
 }
 
+static void lsm6dsk320xAccInit(accDev_t *acc)
+{
+    // HG raw: 32768/320 ≈ 102.4 LSB/g, full ±320g range passed to AHRS
+    acc->acc_1G = 102;
+}
+
 static inline int16_t lsm6dsv16xDecodeSample(const uint8_t *buf)
 {
     return (int16_t)((((uint16_t)buf[1]) << 8) | buf[0]);
@@ -957,14 +988,54 @@ static FAST_CODE bool lsm6dsv16xAccReadSPI(accDev_t *acc)
     return true;
 }
 
+static FAST_CODE bool lsm6dsk320xAccReadSPI(accDev_t *acc)
+{
+    STATIC_DMA_DATA_AUTO uint8_t hgTxBuf[7] = { LSM6DSV_UI_OUTX_L_A_OIS_HG | 0x80, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+    STATIC_DMA_DATA_AUTO uint8_t hgRxBuf[7];
+
+    busSegment_t segments[] = {
+            {.u.buffers = {NULL, NULL}, 7, true, NULL},
+            {.u.link = {NULL, NULL}, 0, true, NULL},
+    };
+    segments[0].u.buffers.txData = hgTxBuf;
+    segments[0].u.buffers.rxData = hgRxBuf;
+
+    spiSequence(&acc->gyro->dev, &segments[0]);
+    spiWait(&acc->gyro->dev);
+
+    const int16_t hgRawX = lsm6dsv16xDecodeSample(&hgRxBuf[1]);
+    const int16_t hgRawY = lsm6dsv16xDecodeSample(&hgRxBuf[3]);
+    const int16_t hgRawZ = lsm6dsv16xDecodeSample(&hgRxBuf[5]);
+
+    // Pass raw ±320g data directly — full range preserved for AHRS impact rejection
+    acc->ADCRaw[X] = hgRawX;
+    acc->ADCRaw[Y] = hgRawY;
+    acc->ADCRaw[Z] = hgRawZ;
+
+    // debug[0] = high-G raw Z (~102 LSB/g, useful for seeing actual G-force)
+    // debug[1] = low-G raw Z / 20 (reference, scaled to ±320g units)
+    // debug[2] = delta (high-G Z − low-G Z reference, i.e. zero offset)
+    // debug[3] = high-G raw X (~102 LSB/g, for G-force readout)
+    const uint8_t lgZLo = spiReadRegMsk(&acc->gyro->dev, LSM6DSV_OUTZ_L_A);
+    const uint8_t lgZHi = spiReadRegMsk(&acc->gyro->dev, LSM6DSV_OUTZ_H_A);
+    const int16_t lgScaledToHg = (int16_t)((((uint16_t)lgZHi) << 8) | lgZLo) / 20;
+
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 0, hgRawZ);
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 1, lgScaledToHg);
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 2, hgRawZ - lgScaledToHg);
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 3, hgRawX);
+
+    return true;
+}
+
 bool lsm6dsk320xSpiAccDetect(accDev_t *acc)
 {
     if (acc->mpuDetectionResult.sensor != LSM6DSK320X_SPI) {
         return false;
     }
 
-    acc->initFn = lsm6dsv16xAccInit;
-    acc->readFn = lsm6dsv16xAccReadSPI;
+    acc->initFn = lsm6dsk320xAccInit;
+    acc->readFn = lsm6dsk320xAccReadSPI;
 
     return true;
 }
@@ -1064,6 +1135,20 @@ static void lsm6dsk320xGyroInit(gyroDev_t *gyro)
     // Generate pulse on interrupt line, not requiring a read to clear
     spiWriteReg(dev, LSM6DSV_CTRL4, LSM6DSV_CTRL4_DRDY_PULSED);
 
+    // Enable the high-G accelerometer channel (K320X only): ±64g, 960Hz, output to registers
+    const uint8_t hgCtrl1Expected =
+                LSM6DSV_CTRL1_XL_HG_REGOUT_EN |
+                LSM6DSV_ENCODE_BITS(LSM6DSV_CTRL1_XL_HG_ODR_960HZ,
+                                    LSM6DSV_CTRL1_XL_HG_ODR_MASK,
+                                    LSM6DSV_CTRL1_XL_HG_ODR_SHIFT) |
+                LSM6DSV_ENCODE_BITS(LSM6DSV_CTRL1_XL_HG_FS_320G,
+                                    LSM6DSV_CTRL1_XL_HG_FS_MASK,
+                                    LSM6DSV_CTRL1_XL_HG_FS_SHIFT);
+    spiWriteReg(dev, LSM6DSV_CTRL1_XL_HG, hgCtrl1Expected);
+    delay(1);
+    const uint8_t hgCtrl1Readback = spiReadRegMsk(dev, LSM6DSV_CTRL1_XL_HG);
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 3, (((uint16_t)hgCtrl1Expected) << 8) | hgCtrl1Readback);
+
     // From section 4.1, Mechanical characteristics, of the datasheet, G_So is 70mdps/LSB for FS = ±2000 dps.
     gyro->scale = 0.070f;
 
@@ -1132,8 +1217,7 @@ static void lsm6dsv16xGyroInit(gyroDev_t *gyro)
                                     LSM6DSV_CTRL6_LPF1_G_BW_SHIFT) |
                 LSM6DSV_ENCODE_BITS(LSM6DSV_CTRL6_FS_G_2000DPS,
                                     LSM6DSV_CTRL6_FS_G_MASK,
-                                    LSM6DSV_CTRL6_FS_G_SHIFT) |
-                LSM6DSV_CTRL6_RESERVED_BIT3_MUST_BE_ONE);
+                                    LSM6DSV_CTRL6_FS_G_SHIFT));
 
     // Enable the gyro digital LPF1 filter
     spiWriteReg(dev, LSM6DSV_CTRL7, LSM6DSV_CTRL7_LPF1_G_EN);
