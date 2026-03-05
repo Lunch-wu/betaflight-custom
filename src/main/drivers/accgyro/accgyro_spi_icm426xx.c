@@ -28,7 +28,7 @@
 
 #include "platform.h"
 
-#if defined(USE_GYRO_SPI_ICM42605) || defined(USE_GYRO_SPI_ICM42688P) || defined(USE_ACCGYRO_IIM42652) || defined(USE_ACCGYRO_IIM42653)
+#if defined(USE_GYRO_SPI_ICM42605) || defined(USE_GYRO_SPI_ICM42688P) || defined(USE_ACCGYRO_IIM42652) || defined(USE_ACCGYRO_IIM42653) || defined(USE_ACCGYRO_ICM40608)
 
 #include "common/axis.h"
 #include "common/utils.h"
@@ -298,6 +298,9 @@ uint8_t icm426xxSpiDetect(const extDevice_t *dev)
         case IIM42653_WHO_AM_I_CONST:
             icmDetected = IIM_42653_SPI;
             break;
+        case ICM40608_WHO_AM_I_CONST:
+            icmDetected = ICM_40608_SPI;
+            break;
         default:
             icmDetected = MPU_NONE;
             break;
@@ -322,6 +325,7 @@ void icm426xxAccInit(accDev_t *acc)
     case ICM_42605_SPI:
     case ICM_42688P_SPI:
     case IIM_42652_SPI:  // IIM42652: ±16g (2048 LSB/g), same as ICM42688P
+    case ICM_40608_SPI:  // ICM40608: ±16g, same as ICM42605
     default:
         acc->acc_1G = 512 * 4;
         break;
@@ -335,6 +339,7 @@ bool icm426xxSpiAccDetect(accDev_t *acc)
     case ICM_42688P_SPI:
     case IIM_42652_SPI:
     case IIM_42653_SPI:
+    case ICM_40608_SPI:
         break;
     default:
         return false;
@@ -441,6 +446,7 @@ bool icm426xxSpiGyroDetect(gyroDev_t *gyro)
     case ICM_42605_SPI:
     case ICM_42688P_SPI:
     case IIM_42652_SPI:  // IIM42652: ±2000dps (same as ICM42688P)
+    case ICM_40608_SPI:  // ICM40608: ±2000dps, same as ICM42605
         gyro->scale = GYRO_SCALE_2000DPS;
         break;
     case IIM_42653_SPI:  // IIM42653: ±4000dps (high dynamic range version)
@@ -462,6 +468,7 @@ static aafConfig_t getGyroAafConfig(const mpuSensor_e gyroModel, const aafConfig
     case ICM_42605_SPI:
     case IIM_42652_SPI:
     case IIM_42653_SPI:
+    case ICM_40608_SPI:
         switch (config) {
         case GYRO_HARDWARE_LPF_NORMAL:
             return aafLUT42605[AAF_CONFIG_258HZ];
@@ -492,4 +499,4 @@ static aafConfig_t getGyroAafConfig(const mpuSensor_e gyroModel, const aafConfig
     }
 }
 
-#endif // USE_GYRO_SPI_ICM42605 || USE_GYRO_SPI_ICM42688P || USE_ACCGYRO_IIM42652 || USE_ACCGYRO_IIM42653
+#endif // USE_GYRO_SPI_ICM42605 || USE_GYRO_SPI_ICM42688P || USE_ACCGYRO_IIM42652 || USE_ACCGYRO_IIM42653 || USE_ACCGYRO_ICM40608

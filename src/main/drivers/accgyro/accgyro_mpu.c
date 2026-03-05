@@ -59,6 +59,7 @@
 #include "drivers/accgyro/accgyro_spi_lsm6dsv16x.h"
 #include "drivers/accgyro/accgyro_mpu.h"
 #include "drivers/accgyro/accgyro_spi_icm40609.h"
+#include "drivers/accgyro/accgyro_spi_icm42607.h"
 
 #include "pg/pg.h"
 #include "pg/gyrodev.h"
@@ -370,7 +371,7 @@ static gyroSpiDetectFn_t gyroSpiDetectFnTable[] = {
 #ifdef USE_ACCGYRO_BMI270
     bmi270Detect,
 #endif
-#if defined(USE_GYRO_SPI_ICM42605) || defined(USE_GYRO_SPI_ICM42688P) || defined(USE_ACCGYRO_IIM42653)
+#if defined(USE_GYRO_SPI_ICM42605) || defined(USE_GYRO_SPI_ICM42688P) || defined(USE_ACCGYRO_IIM42653) || defined(USE_ACCGYRO_ICM40608)
     icm426xxSpiDetect,
 #endif
 #ifdef USE_GYRO_SPI_ICM20649
@@ -384,6 +385,9 @@ static gyroSpiDetectFn_t gyroSpiDetectFnTable[] = {
 #endif
 #ifdef USE_ACCGYRO_ICM40609D
     icm40609SpiDetect,
+#endif
+#ifdef USE_ACCGYRO_ICM42607
+    icm42607SpiDetect,
 #endif
     NULL // Avoid an empty array
 };
