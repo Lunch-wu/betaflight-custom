@@ -19,6 +19,7 @@
  * If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1012,18 +1013,40 @@ static FAST_CODE bool lsm6dsk320xAccReadSPI(accDev_t *acc)
     acc->ADCRaw[Y] = hgRawY;
     acc->ADCRaw[Z] = hgRawZ;
 
-    // debug[0] = high-G raw Z (~102 LSB/g, useful for seeing actual G-force)
-    // debug[1] = low-G raw Z / 20 (reference, scaled to ±320g units)
-    // debug[2] = delta (high-G Z − low-G Z reference, i.e. zero offset)
-    // debug[3] = high-G raw X (~102 LSB/g, for G-force readout)
-    const uint8_t lgZLo = spiReadRegMsk(&acc->gyro->dev, LSM6DSV_OUTZ_L_A);
-    const uint8_t lgZHi = spiReadRegMsk(&acc->gyro->dev, LSM6DSV_OUTZ_H_A);
-    const int16_t lgScaledToHg = (int16_t)((((uint16_t)lgZHi) << 8) | lgZLo) / 20;
+    // Read low-G three axes for comparison
+    uint8_t lgTxBuf[7] = { LSM6DSV_OUTX_L_A | 0x80, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+    uint8_t lgRxBuf[7];
+    busSegment_t lgSegs[] = {
+            {.u.buffers = {NULL, NULL}, 7, true, NULL},
+            {.u.link = {NULL, NULL}, 0, true, NULL},
+    };
+    lgSegs[0].u.buffers.txData = lgTxBuf;
+    lgSegs[0].u.buffers.rxData = lgRxBuf;
+    spiSequence(&acc->gyro->dev, &lgSegs[0]);
+    spiWait(&acc->gyro->dev);
 
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 0, hgRawZ);
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 1, lgScaledToHg);
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 2, hgRawZ - lgScaledToHg);
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 3, hgRawX);
+    const int16_t lgRawX = lsm6dsv16xDecodeSample(&lgRxBuf[1]);
+    const int16_t lgRawY = lsm6dsv16xDecodeSample(&lgRxBuf[3]);
+    const int16_t lgRawZ = lsm6dsv16xDecodeSample(&lgRxBuf[5]);
+
+    // debug[0] = low-G magnitude × 1000 (normalized, 1g = 1000)
+    // debug[1] = high-G magnitude × 1000 (normalized, 1g = 1000)
+    // debug[2] = gyro peak raw (max abs across 3 axes, ±32768 range, overflow at ~31980)
+    // debug[3] = gyro peak in dps (0.070 dps/LSB, ±2000 dps nominal)
+    const float lgMag = sqrtf((float)lgRawX * lgRawX + (float)lgRawY * lgRawY + (float)lgRawZ * lgRawZ) / 2048.0f;
+    const float hgMag = sqrtf((float)hgRawX * hgRawX + (float)hgRawY * hgRawY + (float)hgRawZ * hgRawZ) / 102.4f;
+
+    const int16_t gyroRawX = acc->gyro->gyroADCRaw[X];
+    const int16_t gyroRawY = acc->gyro->gyroADCRaw[Y];
+    const int16_t gyroRawZ = acc->gyro->gyroADCRaw[Z];
+    int16_t gyroPeakRaw = abs(gyroRawX);
+    if (abs(gyroRawY) > gyroPeakRaw) gyroPeakRaw = abs(gyroRawY);
+    if (abs(gyroRawZ) > gyroPeakRaw) gyroPeakRaw = abs(gyroRawZ);
+
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 0, lrintf(lgMag * 1000));
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 1, lrintf(hgMag * 1000));
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 2, gyroPeakRaw);
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 3, lrintf(gyroPeakRaw * 0.070f));
 
     return true;
 }
