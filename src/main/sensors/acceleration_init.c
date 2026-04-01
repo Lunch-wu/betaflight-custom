@@ -240,7 +240,7 @@ retry:
                 accHardware = ACC_IIM42653;
                 break;
             case ICM_40608_SPI:
-                accHardware = ACC_ICM40608;
+                accHardware = ACC_ICM42688P;
                 break;
             default:
                 accHardware = ACC_NONE;

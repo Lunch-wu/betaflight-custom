@@ -454,7 +454,7 @@ STATIC_UNIT_TESTED gyroHardware_e gyroDetect(gyroDev_t *dev)
                 gyroHardware = GYRO_IIM42653;
                 break;
             case ICM_40608_SPI:
-                gyroHardware = GYRO_ICM40608;
+                gyroHardware = GYRO_ICM42688P;
                 break;
             default:
                 gyroHardware = GYRO_NONE;
