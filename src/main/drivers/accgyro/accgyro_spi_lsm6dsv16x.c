@@ -930,10 +930,39 @@ static void lsm6dsv16xAccInit(accDev_t *acc)
     acc->acc_1G = 512 * 4;
 }
 
+// Low-G / High-G fusion constants (must precede lsm6dsk320xAccInit)
+#define LG_HG_RATIO            20      // 2048 / 102.4 ≈ 20
+#define LG_ACC_1G               2048
+#define HG_ACC_1G               102
+#define LG_SATURATION_THRESHOLD 24576  // ~12G in low-G LSB
+#define HG_RECOVERY_COS_SQ     0.9801f // cos²(8°) ≈ 0.98, tighter than 0.99 after squaring
+#define HG_RECOVERY_MAG_THRESH 400     // max diff in low-G equivalent LSB per axis
+#define HG_RECOVERY_FRAMES     10
+#define HG_TIMEOUT_FRAMES      500     // ~500ms at 1kHz
+#define HG_OFFSET_ALPHA        0.002f  // LPF α for zero offset tracking (~0.3Hz at 1kHz)
+
+typedef enum {
+    ACC_SOURCE_LOW_G = 0,
+    ACC_SOURCE_HIGH_G,
+} accSourceState_e;
+
+static accSourceState_e accSource = ACC_SOURCE_LOW_G;
+static float hgZeroOffsetF[XYZ_AXIS_COUNT] = {0};
+static uint16_t recoveryCount = 0;
+static uint16_t highGFrameCount = 0;
+
 static void lsm6dsk320xAccInit(accDev_t *acc)
 {
-    // HG raw: 32768/320 ≈ 102.4 LSB/g, full ±320g range passed to AHRS
-    acc->acc_1G = 102;
+    acc->acc_1G = LG_ACC_1G;
+    acc->accUsingHighG = false;
+    acc->accSourceChanged = false;
+
+    accSource = ACC_SOURCE_LOW_G;
+    for (int i = 0; i < XYZ_AXIS_COUNT; i++) {
+        hgZeroOffsetF[i] = 0.0f;
+    }
+    recoveryCount = 0;
+    highGFrameCount = 0;
 }
 
 static inline int16_t lsm6dsv16xDecodeSample(const uint8_t *buf)
@@ -991,6 +1020,7 @@ static FAST_CODE bool lsm6dsv16xAccReadSPI(accDev_t *acc)
 
 static FAST_CODE bool lsm6dsk320xAccReadSPI(accDev_t *acc)
 {
+    // --- Read High-G (±320G) three axes ---
     STATIC_DMA_DATA_AUTO uint8_t hgTxBuf[7] = { LSM6DSV_UI_OUTX_L_A_OIS_HG | 0x80, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
     STATIC_DMA_DATA_AUTO uint8_t hgRxBuf[7];
 
@@ -1004,18 +1034,15 @@ static FAST_CODE bool lsm6dsk320xAccReadSPI(accDev_t *acc)
     spiSequence(&acc->gyro->dev, &segments[0]);
     spiWait(&acc->gyro->dev);
 
-    const int16_t hgRawX = lsm6dsv16xDecodeSample(&hgRxBuf[1]);
-    const int16_t hgRawY = lsm6dsv16xDecodeSample(&hgRxBuf[3]);
-    const int16_t hgRawZ = lsm6dsv16xDecodeSample(&hgRxBuf[5]);
+    const int16_t hgRaw[XYZ_AXIS_COUNT] = {
+        lsm6dsv16xDecodeSample(&hgRxBuf[1]),
+        lsm6dsv16xDecodeSample(&hgRxBuf[3]),
+        lsm6dsv16xDecodeSample(&hgRxBuf[5]),
+    };
 
-    // Pass raw ±320g data directly — full range preserved for AHRS impact rejection
-    acc->ADCRaw[X] = hgRawX;
-    acc->ADCRaw[Y] = hgRawY;
-    acc->ADCRaw[Z] = hgRawZ;
-
-    // Read low-G three axes for comparison
-    uint8_t lgTxBuf[7] = { LSM6DSV_OUTX_L_A | 0x80, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
-    uint8_t lgRxBuf[7];
+    // --- Read Low-G (±16G) three axes ---
+    STATIC_DMA_DATA_AUTO uint8_t lgTxBuf[7] = { LSM6DSV_OUTX_L_A | 0x80, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+    STATIC_DMA_DATA_AUTO uint8_t lgRxBuf[7];
     busSegment_t lgSegs[] = {
             {.u.buffers = {NULL, NULL}, 7, true, NULL},
             {.u.link = {NULL, NULL}, 0, true, NULL},
@@ -1025,28 +1052,107 @@ static FAST_CODE bool lsm6dsk320xAccReadSPI(accDev_t *acc)
     spiSequence(&acc->gyro->dev, &lgSegs[0]);
     spiWait(&acc->gyro->dev);
 
-    const int16_t lgRawX = lsm6dsv16xDecodeSample(&lgRxBuf[1]);
-    const int16_t lgRawY = lsm6dsv16xDecodeSample(&lgRxBuf[3]);
-    const int16_t lgRawZ = lsm6dsv16xDecodeSample(&lgRxBuf[5]);
+    const int16_t lgRaw[XYZ_AXIS_COUNT] = {
+        lsm6dsv16xDecodeSample(&lgRxBuf[1]),
+        lsm6dsv16xDecodeSample(&lgRxBuf[3]),
+        lsm6dsv16xDecodeSample(&lgRxBuf[5]),
+    };
 
-    // debug[0] = low-G magnitude × 1000 (normalized, 1g = 1000)
-    // debug[1] = high-G magnitude × 1000 (normalized, 1g = 1000)
-    // debug[2] = gyro peak raw (max abs across 3 axes, ±32768 range, overflow at ~31980)
-    // debug[3] = gyro peak in dps (0.070 dps/LSB, ±2000 dps nominal)
-    const float lgMag = sqrtf((float)lgRawX * lgRawX + (float)lgRawY * lgRawY + (float)lgRawZ * lgRawZ) / 2048.0f;
-    const float hgMag = sqrtf((float)hgRawX * hgRawX + (float)hgRawY * hgRawY + (float)hgRawZ * hgRawZ) / 102.4f;
+    // --- Zero offset tracking: only when low-G is trustworthy and far from saturation ---
+    if (accSource == ACC_SOURCE_LOW_G &&
+        abs(lgRaw[X]) < LG_SATURATION_THRESHOLD &&
+        abs(lgRaw[Y]) < LG_SATURATION_THRESHOLD &&
+        abs(lgRaw[Z]) < LG_SATURATION_THRESHOLD) {
+        for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+            const float expected = (float)lgRaw[axis] / LG_HG_RATIO;
+            const float measured = (float)hgRaw[axis];
+            hgZeroOffsetF[axis] += HG_OFFSET_ALPHA * ((measured - expected) - hgZeroOffsetF[axis]);
+        }
+    }
 
-    const int16_t gyroRawX = acc->gyro->gyroADCRaw[X];
-    const int16_t gyroRawY = acc->gyro->gyroADCRaw[Y];
-    const int16_t gyroRawZ = acc->gyro->gyroADCRaw[Z];
-    int16_t gyroPeakRaw = abs(gyroRawX);
-    if (abs(gyroRawY) > gyroPeakRaw) gyroPeakRaw = abs(gyroRawY);
-    if (abs(gyroRawZ) > gyroPeakRaw) gyroPeakRaw = abs(gyroRawZ);
+    // --- State machine ---
+    bool switchOccurred = false;
 
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 0, lrintf(lgMag * 1000));
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 1, lrintf(hgMag * 1000));
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 2, gyroPeakRaw);
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 3, lrintf(gyroPeakRaw * 0.070f));
+    if (accSource == ACC_SOURCE_LOW_G) {
+        // Detect low-G saturation on any axis → switch to high-G
+        if (abs(lgRaw[X]) > LG_SATURATION_THRESHOLD ||
+            abs(lgRaw[Y]) > LG_SATURATION_THRESHOLD ||
+            abs(lgRaw[Z]) > LG_SATURATION_THRESHOLD) {
+            accSource = ACC_SOURCE_HIGH_G;
+            recoveryCount = 0;
+            highGFrameCount = 0;
+            switchOccurred = true;
+        }
+    } else {
+        highGFrameCount++;
+
+        bool recovered = false;
+
+        if (highGFrameCount > HG_TIMEOUT_FRAMES) {
+            // Timeout protection: force back to low-G
+            recovered = true;
+        } else {
+            // Direction consistency: cos²θ between lgVec and hgVec (avoids sqrt)
+            float dot = 0, lgMagSq = 0, hgMagSq = 0;
+            bool magnitudeOK = true;
+
+            for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+                const float lg = (float)lgRaw[axis];
+                const float hgCorrected = (float)hgRaw[axis] - hgZeroOffsetF[axis];
+                dot += lg * hgCorrected;
+                lgMagSq += lg * lg;
+                hgMagSq += hgCorrected * hgCorrected;
+
+                // Magnitude consistency: compare in low-G equivalent units
+                const int32_t hgInLgScale = lrintf(hgCorrected) * LG_HG_RATIO;
+                if (abs((int32_t)lgRaw[axis] - hgInLgScale) > HG_RECOVERY_MAG_THRESH) {
+                    magnitudeOK = false;
+                }
+            }
+
+            const float denomSq = lgMagSq * hgMagSq;
+            const bool directionOK = (denomSq > 1.0f) && (dot * dot / denomSq > HG_RECOVERY_COS_SQ);
+
+            if (directionOK && magnitudeOK) {
+                recoveryCount++;
+                if (recoveryCount >= HG_RECOVERY_FRAMES) {
+                    recovered = true;
+                }
+            } else {
+                recoveryCount = 0;
+            }
+        }
+
+        if (recovered) {
+            accSource = ACC_SOURCE_LOW_G;
+            switchOccurred = true;
+        }
+    }
+
+    // --- Output based on current source ---
+    if (accSource == ACC_SOURCE_LOW_G) {
+        for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+            acc->ADCRaw[axis] = lgRaw[axis];
+        }
+        acc->acc_1G = LG_ACC_1G;
+    } else {
+        for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+            acc->ADCRaw[axis] = hgRaw[axis] - lrintf(hgZeroOffsetF[axis]);
+        }
+        acc->acc_1G = HG_ACC_1G;
+    }
+    acc->acc_1G_rec = 1.0f / acc->acc_1G;
+    acc->accSourceChanged = switchOccurred;
+    acc->accUsingHighG = (accSource == ACC_SOURCE_HIGH_G);
+
+    // debug[0] = fusion source (0=LG, 1=HG)
+    // debug[1] = high-G X zero offset × 100
+    // debug[2] = low-G X raw
+    // debug[3] = high-G X raw
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 0, accSource);
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 1, lrintf(hgZeroOffsetF[X] * 100));
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 2, lgRaw[X]);
+    DEBUG_SET(DEBUG_ACC_HIGH_G, 3, hgRaw[X]);
 
     return true;
 }

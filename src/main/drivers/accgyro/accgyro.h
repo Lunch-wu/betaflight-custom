@@ -155,6 +155,8 @@ typedef struct accDev_s {
     bool dataReady;
     gyroDev_t *gyro;
     bool acc_high_fsr;
+    bool accUsingHighG;
+    bool accSourceChanged;
     char revisionCode;                                      // a revision code for the sensor, if known
     uint8_t filler[2];
     matrix33_t rotationMatrix;

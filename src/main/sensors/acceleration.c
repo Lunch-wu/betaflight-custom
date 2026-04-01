@@ -67,6 +67,17 @@ static inline void calibrateAccelerometer(void)
 
 static inline void applyAccelerationTrims(const flightDynamicsTrims_t *accelerationTrims)
 {
+#ifdef USE_ACCGYRO_LSM6DSK320X
+    if (acc.dev.accUsingHighG) {
+        // Trims were calibrated in low-G units (2048 LSB/G).
+        // Scale down by LG/HG ratio for high-G units (102 LSB/G).
+        const float trimScale = 1.0f / 20.0f;
+        acc.accADC.x -= accelerationTrims->raw[X] * trimScale;
+        acc.accADC.y -= accelerationTrims->raw[Y] * trimScale;
+        acc.accADC.z -= accelerationTrims->raw[Z] * trimScale;
+        return;
+    }
+#endif
     acc.accADC.x -= accelerationTrims->raw[X];
     acc.accADC.y -= accelerationTrims->raw[Y];
     acc.accADC.z -= accelerationTrims->raw[Z];
@@ -75,6 +86,21 @@ static inline void applyAccelerationTrims(const flightDynamicsTrims_t *accelerat
 static inline void postProcessAccelerometer(void)
 {
     static vector3_t accAdcPrev;
+
+#ifdef USE_ACCGYRO_LSM6DSK320X
+    // On LG/HG source switch: re-seed LPF state and suppress jerk spike
+    if (acc.dev.accSourceChanged) {
+        for (unsigned axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+            if (accelerationRuntime.accLpfCutHz) {
+                // Re-seed both internal states to avoid transient
+                accelerationRuntime.accFilter[axis].state = acc.accADC.v[axis];
+                accelerationRuntime.accFilter[axis].state1 = acc.accADC.v[axis];
+            }
+            accAdcPrev.v[axis] = acc.accADC.v[axis];
+        }
+        acc.dev.accSourceChanged = false;
+    }
+#endif
 
     for (unsigned axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
 

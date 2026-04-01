@@ -421,7 +421,11 @@ void pgResetFn_osdConfig(osdConfig_t *osdConfig)
     osdConfig->canvas_cols = OSD_HD_COLS;
     osdConfig->canvas_rows = OSD_HD_ROWS;
 #else
+#ifdef DEFAULT_OSD_DISPLAYPORT_DEVICE
+    osdConfig->displayPortDevice = DEFAULT_OSD_DISPLAYPORT_DEVICE;
+#else
     osdConfig->displayPortDevice = OSD_DISPLAYPORT_DEVICE_AUTO;
+#endif
     osdConfig->canvas_cols = OSD_SD_COLS;
     osdConfig->canvas_rows = OSD_SD_ROWS;
 #endif
