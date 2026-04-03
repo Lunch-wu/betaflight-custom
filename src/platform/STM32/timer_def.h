@@ -724,6 +724,7 @@
 //PORTB
 #define DEF_TIM_AF__PB0__TCH_TIM1_CH2N    D(1, 1)
 #define DEF_TIM_AF__PB1__TCH_TIM1_CH3N    D(1, 1)
+#define DEF_TIM_AF__PB2__TCH_TIM2_CH3     D(1, 2)
 #define DEF_TIM_AF__PB3__TCH_TIM2_CH2     D(1, 2)
 #define DEF_TIM_AF__PB6__TCH_TIM16_CH1N   D(1, 16)
 #define DEF_TIM_AF__PB7__TCH_TIM17_CH1N   D(1, 17)
