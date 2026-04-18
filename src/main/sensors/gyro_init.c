@@ -313,6 +313,8 @@ void gyroInitSensor(gyroSensor_t *gyroSensor, const gyroDeviceConfig_t *config)
     case GYRO_LSM6DSO:
     case GYRO_LSM6DSV16X:
     case GYRO_LSM6DSK320X:
+    case GYRO_SCS3304:
+    case GYRO_SCS3302:
     case GYRO_ICM42688P:
     case GYRO_IIM42652:
     case GYRO_IIM42653:
@@ -454,7 +456,8 @@ STATIC_UNIT_TESTED gyroHardware_e gyroDetect(gyroDev_t *dev)
                 gyroHardware = GYRO_IIM42653;
                 break;
             case ICM_40608_SPI:
-                gyroHardware = GYRO_ICM42688P;
+                // Report as ICM40609D so BF Configurator shows a recognizable name.
+                gyroHardware = GYRO_ICM40609D;
                 break;
             default:
                 gyroHardware = GYRO_NONE;
@@ -524,7 +527,26 @@ STATIC_UNIT_TESTED gyroHardware_e gyroDetect(gyroDev_t *dev)
 #ifdef USE_ACCGYRO_LSM6DSK320X
     case GYRO_LSM6DSK320X:
         if (lsm6dsk320xSpiGyroDetect(dev)) {
-            gyroHardware = GYRO_LSM6DSK320X;
+            // Report as LSM6DSV16X so older Configurators (which don't know LSM6DSK320X enum index) display it correctly.
+            gyroHardware = GYRO_LSM6DSV16X;
+            break;
+        }
+        FALLTHROUGH;
+#endif
+
+#ifdef USE_ACCGYRO_SCS3304
+    case GYRO_SCS3304:
+        if (scs3304SpiGyroDetect(dev)) {
+            gyroHardware = GYRO_SCS3304;
+            break;
+        }
+        FALLTHROUGH;
+#endif
+
+#ifdef USE_ACCGYRO_SCS3302
+    case GYRO_SCS3302:
+        if (scs3302SpiGyroDetect(dev)) {
+            gyroHardware = GYRO_SCS3302;
             break;
         }
         FALLTHROUGH;

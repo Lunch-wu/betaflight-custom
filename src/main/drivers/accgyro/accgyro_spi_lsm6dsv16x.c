@@ -19,20 +19,18 @@
  * If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "platform.h"
 
-#if defined(USE_ACCGYRO_LSM6DSV16X) || defined(USE_ACCGYRO_LSM6DSK320X)
+#if defined(USE_ACCGYRO_LSM6DSV16X) || defined(USE_ACCGYRO_LSM6DSK320X) || defined(USE_ACCGYRO_SCS3304) || defined(USE_ACCGYRO_SCS3302)
 
 #include "accgyro_spi_lsm6dsv16x.h"
 
-#include "build/debug.h"
-
 #include "drivers/time.h"
 #include "sensors/gyro.h"
+#include "drivers/time.h"
 
 /* See datasheet
  *
@@ -344,15 +342,14 @@
 #define LSM6DSV_CTRL6_LPF1_G_BW_6                       6   // ~28.8Hz @7.68kHz, ~30Hz @8kHz
 #define LSM6DSV_CTRL6_LPF1_G_BW_7                       7   // Narrowest: ~14.4Hz @7.68kHz, ~15Hz @8kHz
 
-#define LSM6DSV_CTRL6_FS_G_MASK                         0x07
+#define LSM6DSV_CTRL6_FS_G_MASK                         0x0f
 #define LSM6DSV_CTRL6_FS_G_SHIFT                        0
-#define LSM6DSV_CTRL6_RESERVED_BIT3_MUST_BE_ONE        0x08
 #define LSM6DSV_CTRL6_FS_G_125DPS                       0x00
 #define LSM6DSV_CTRL6_FS_G_250DPS                       0x01
 #define LSM6DSV_CTRL6_FS_G_500DPS                       0x02
 #define LSM6DSV_CTRL6_FS_G_1000DPS                      0x03
 #define LSM6DSV_CTRL6_FS_G_2000DPS                      0x04
-#define LSM6DSV_CTRL6_FS_G_4000DPS                      0x05
+#define LSM6DSV_CTRL6_FS_G_4000DPS                      0xc0
 
 // Control register 7 (R/W)
 #define LSM6DSV_CTRL7                       0x16
@@ -485,17 +482,17 @@
 #define LSM6DSV_UI_OUTZ_L_G_OIS_EIS         0x32
 #define LSM6DSV_UI_OUTZ_H_G_OIS_EIS         0x33
 
-// High-G accelerometer X-axis output register (R)
-#define LSM6DSV_UI_OUTX_L_A_OIS_HG          0x34
-#define LSM6DSV_UI_OUTX_H_A_OIS_HG          0x35
+// Linear acceleration sensor X-axis output register (R)
+#define UI_OUTX_L_A_OIS_DualC               0x34
+#define UI_OUTX_H_A_OIS_DualC               0x35
 
-// High-G accelerometer Y-axis output register (R)
-#define LSM6DSV_UI_OUTY_L_A_OIS_HG          0x36
-#define LSM6DSV_UI_OUTY_H_A_OIS_HG          0x37
+// Linear acceleration sensor Y-axis output register (R)
+#define UI_OUTY_L_A_OIS_DualC               0x36
+#define UI_OUTY_H_A_OIS_DualC               0x37
 
-// High-G accelerometer Z-axis output register (R)
-#define LSM6DSV_UI_OUTZ_L_A_OIS_HG          0x38
-#define LSM6DSV_UI_OUTZ_H_A_OIS_HG          0x39
+// Linear acceleration sensor Z-axis output register (R)
+#define UI_OUTZ_L_A_OIS_DualC               0x38
+#define UI_OUTZ_H_A_OIS_DualC               0x39
 
 // Analog hub and Qvar data output register (R)
 #define LSM6DSV_AH_QVAR_OUT_L               0x3A
@@ -579,31 +576,7 @@
 #define LSM6DSV_MLC_STATUS_MAINPAGE_IS_MLC2                 0x02
 #define LSM6DSV_MLC_STATUS_MAINPAGE_IS_MLC1                 0x01
 
-// High-G wake-up source register (R/W)
-#define LSM6DSV_HG_WAKE_UP_SRC              0x4C
-
-// High-G accelerometer control register 2 (R/W)
-#define LSM6DSV_CTRL2_XL_HG                 0x4D
-
-// High-G accelerometer control register 1 (R/W)
-#define LSM6DSV_CTRL1_XL_HG                 0x4E
-#define LSM6DSV_CTRL1_XL_HG_REGOUT_EN                  0x80
-#define LSM6DSV_CTRL1_XL_HG_USR_OFF_ON_OUT              0x40
-#define LSM6DSV_CTRL1_XL_HG_ODR_MASK                    0x38
-#define LSM6DSV_CTRL1_XL_HG_ODR_SHIFT                   3
-#define LSM6DSV_CTRL1_XL_HG_ODR_POWERDOWN               0
-#define LSM6DSV_CTRL1_XL_HG_ODR_480HZ                   3
-#define LSM6DSV_CTRL1_XL_HG_ODR_960HZ                   4
-#define LSM6DSV_CTRL1_XL_HG_ODR_1920HZ                  5
-#define LSM6DSV_CTRL1_XL_HG_ODR_3840HZ                  6
-#define LSM6DSV_CTRL1_XL_HG_ODR_7680HZ                  7
-#define LSM6DSV_CTRL1_XL_HG_FS_MASK                     0x07
-#define LSM6DSV_CTRL1_XL_HG_FS_SHIFT                    0
-#define LSM6DSV_CTRL1_XL_HG_FS_32G                      0
-#define LSM6DSV_CTRL1_XL_HG_FS_64G                      1
-#define LSM6DSV_CTRL1_XL_HG_FS_128G                     2
-#define LSM6DSV_CTRL1_XL_HG_FS_256G                     3
-#define LSM6DSV_CTRL1_XL_HG_FS_320G                     4
+// RESERVED - 4C-4E
 
 // Internal frequency register (R)
 #define LSM6DSV_INTERNAL_FREQ_FINE          0x4F
@@ -896,73 +869,30 @@
 
 uint8_t lsm6dsk320xSpiDetect(const extDevice_t *dev)
 {
-    uint8_t attemptsRemaining = 20;
-    do {
-        delay(1);
-        const uint8_t whoAmI = spiReadRegMsk(dev, LSM6DSV_WHO_AM_I);
+    const uint8_t whoAmI = spiReadRegMsk(dev, LSM6DSV_WHO_AM_I);
 
-        if (whoAmI == LSM6DSK320X_WHO_AM_I_CONST) {
-            return LSM6DSK320X_SPI;
-        }
-    } while (attemptsRemaining--);
+    if (whoAmI != LSM6DSK320X_WHO_AM_I_CONST) {
+        return MPU_NONE;
+    }
 
-    return MPU_NONE;
+    return LSM6DSK320X_SPI;
 }
 
 uint8_t lsm6dsv16xSpiDetect(const extDevice_t *dev)
 {
-    uint8_t attemptsRemaining = 20;
-    do {
-        delay(1);
-        const uint8_t whoAmI = spiReadRegMsk(dev, LSM6DSV_WHO_AM_I);
+    const uint8_t whoAmI = spiReadRegMsk(dev, LSM6DSV_WHO_AM_I);
 
-        if (whoAmI == LSM6DSV16X_WHO_AM_I_CONST) {
-            return LSM6DSV16X_SPI;
-        }
-    } while (attemptsRemaining--);
+    if (whoAmI != LSM6DSV16X_WHO_AM_I_CONST) {
+        return MPU_NONE;
+    }
 
-    return MPU_NONE;
+    return LSM6DSV16X_SPI;
 }
 
 static void lsm6dsv16xAccInit(accDev_t *acc)
 {
     // ±16G mode
     acc->acc_1G = 512 * 4;
-}
-
-// Low-G / High-G fusion constants (must precede lsm6dsk320xAccInit)
-#define LG_HG_RATIO            20      // 2048 / 102.4 ≈ 20
-#define LG_ACC_1G               2048
-#define HG_ACC_1G               102
-#define LG_SATURATION_THRESHOLD 24576  // ~12G in low-G LSB
-#define HG_RECOVERY_COS_SQ     0.9801f // cos²(8°) ≈ 0.98, tighter than 0.99 after squaring
-#define HG_RECOVERY_MAG_THRESH 400     // max diff in low-G equivalent LSB per axis
-#define HG_RECOVERY_FRAMES     10
-#define HG_TIMEOUT_FRAMES      500     // ~500ms at 1kHz
-#define HG_OFFSET_ALPHA        0.002f  // LPF α for zero offset tracking (~0.3Hz at 1kHz)
-
-typedef enum {
-    ACC_SOURCE_LOW_G = 0,
-    ACC_SOURCE_HIGH_G,
-} accSourceState_e;
-
-static accSourceState_e accSource = ACC_SOURCE_LOW_G;
-static float hgZeroOffsetF[XYZ_AXIS_COUNT] = {0};
-static uint16_t recoveryCount = 0;
-static uint16_t highGFrameCount = 0;
-
-static void lsm6dsk320xAccInit(accDev_t *acc)
-{
-    acc->acc_1G = LG_ACC_1G;
-    acc->accUsingHighG = false;
-    acc->accSourceChanged = false;
-
-    accSource = ACC_SOURCE_LOW_G;
-    for (int i = 0; i < XYZ_AXIS_COUNT; i++) {
-        hgZeroOffsetF[i] = 0.0f;
-    }
-    recoveryCount = 0;
-    highGFrameCount = 0;
 }
 
 static inline int16_t lsm6dsv16xDecodeSample(const uint8_t *buf)
@@ -1018,153 +948,14 @@ static FAST_CODE bool lsm6dsv16xAccReadSPI(accDev_t *acc)
     return true;
 }
 
-static FAST_CODE bool lsm6dsk320xAccReadSPI(accDev_t *acc)
-{
-    // --- Read High-G (±320G) three axes ---
-    STATIC_DMA_DATA_AUTO uint8_t hgTxBuf[7] = { LSM6DSV_UI_OUTX_L_A_OIS_HG | 0x80, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
-    STATIC_DMA_DATA_AUTO uint8_t hgRxBuf[7];
-
-    busSegment_t segments[] = {
-            {.u.buffers = {NULL, NULL}, 7, true, NULL},
-            {.u.link = {NULL, NULL}, 0, true, NULL},
-    };
-    segments[0].u.buffers.txData = hgTxBuf;
-    segments[0].u.buffers.rxData = hgRxBuf;
-
-    spiSequence(&acc->gyro->dev, &segments[0]);
-    spiWait(&acc->gyro->dev);
-
-    const int16_t hgRaw[XYZ_AXIS_COUNT] = {
-        lsm6dsv16xDecodeSample(&hgRxBuf[1]),
-        lsm6dsv16xDecodeSample(&hgRxBuf[3]),
-        lsm6dsv16xDecodeSample(&hgRxBuf[5]),
-    };
-
-    // --- Read Low-G (±16G) three axes ---
-    STATIC_DMA_DATA_AUTO uint8_t lgTxBuf[7] = { LSM6DSV_OUTX_L_A | 0x80, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
-    STATIC_DMA_DATA_AUTO uint8_t lgRxBuf[7];
-    busSegment_t lgSegs[] = {
-            {.u.buffers = {NULL, NULL}, 7, true, NULL},
-            {.u.link = {NULL, NULL}, 0, true, NULL},
-    };
-    lgSegs[0].u.buffers.txData = lgTxBuf;
-    lgSegs[0].u.buffers.rxData = lgRxBuf;
-    spiSequence(&acc->gyro->dev, &lgSegs[0]);
-    spiWait(&acc->gyro->dev);
-
-    const int16_t lgRaw[XYZ_AXIS_COUNT] = {
-        lsm6dsv16xDecodeSample(&lgRxBuf[1]),
-        lsm6dsv16xDecodeSample(&lgRxBuf[3]),
-        lsm6dsv16xDecodeSample(&lgRxBuf[5]),
-    };
-
-    // --- Zero offset tracking: only when low-G is trustworthy and far from saturation ---
-    if (accSource == ACC_SOURCE_LOW_G &&
-        abs(lgRaw[X]) < LG_SATURATION_THRESHOLD &&
-        abs(lgRaw[Y]) < LG_SATURATION_THRESHOLD &&
-        abs(lgRaw[Z]) < LG_SATURATION_THRESHOLD) {
-        for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
-            const float expected = (float)lgRaw[axis] / LG_HG_RATIO;
-            const float measured = (float)hgRaw[axis];
-            hgZeroOffsetF[axis] += HG_OFFSET_ALPHA * ((measured - expected) - hgZeroOffsetF[axis]);
-        }
-    }
-
-    // --- State machine ---
-    bool switchOccurred = false;
-
-    if (accSource == ACC_SOURCE_LOW_G) {
-        // Detect low-G saturation on any axis → switch to high-G
-        if (abs(lgRaw[X]) > LG_SATURATION_THRESHOLD ||
-            abs(lgRaw[Y]) > LG_SATURATION_THRESHOLD ||
-            abs(lgRaw[Z]) > LG_SATURATION_THRESHOLD) {
-            accSource = ACC_SOURCE_HIGH_G;
-            recoveryCount = 0;
-            highGFrameCount = 0;
-            switchOccurred = true;
-        }
-    } else {
-        highGFrameCount++;
-
-        bool recovered = false;
-
-        if (highGFrameCount > HG_TIMEOUT_FRAMES) {
-            // Timeout protection: force back to low-G
-            recovered = true;
-        } else {
-            // Direction consistency: cos²θ between lgVec and hgVec (avoids sqrt)
-            float dot = 0, lgMagSq = 0, hgMagSq = 0;
-            bool magnitudeOK = true;
-
-            for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
-                const float lg = (float)lgRaw[axis];
-                const float hgCorrected = (float)hgRaw[axis] - hgZeroOffsetF[axis];
-                dot += lg * hgCorrected;
-                lgMagSq += lg * lg;
-                hgMagSq += hgCorrected * hgCorrected;
-
-                // Magnitude consistency: compare in low-G equivalent units
-                const int32_t hgInLgScale = lrintf(hgCorrected) * LG_HG_RATIO;
-                if (abs((int32_t)lgRaw[axis] - hgInLgScale) > HG_RECOVERY_MAG_THRESH) {
-                    magnitudeOK = false;
-                }
-            }
-
-            const float denomSq = lgMagSq * hgMagSq;
-            const bool directionOK = (denomSq > 1.0f) && (dot * dot / denomSq > HG_RECOVERY_COS_SQ);
-
-            if (directionOK && magnitudeOK) {
-                recoveryCount++;
-                if (recoveryCount >= HG_RECOVERY_FRAMES) {
-                    recovered = true;
-                }
-            } else {
-                recoveryCount = 0;
-            }
-        }
-
-        if (recovered) {
-            accSource = ACC_SOURCE_LOW_G;
-            switchOccurred = true;
-        }
-    }
-
-    // --- Output based on current source ---
-    if (accSource == ACC_SOURCE_LOW_G) {
-        for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
-            acc->ADCRaw[axis] = lgRaw[axis];
-        }
-        acc->acc_1G = LG_ACC_1G;
-    } else {
-        for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
-            acc->ADCRaw[axis] = hgRaw[axis] - lrintf(hgZeroOffsetF[axis]);
-        }
-        acc->acc_1G = HG_ACC_1G;
-    }
-    acc->acc_1G_rec = 1.0f / acc->acc_1G;
-    acc->accSourceChanged = switchOccurred;
-    acc->accUsingHighG = (accSource == ACC_SOURCE_HIGH_G);
-
-    // debug[0] = fusion source (0=LG, 1=HG)
-    // debug[1] = high-G X zero offset × 100
-    // debug[2] = low-G X raw
-    // debug[3] = high-G X raw
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 0, accSource);
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 1, lrintf(hgZeroOffsetF[X] * 100));
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 2, lgRaw[X]);
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 3, hgRaw[X]);
-
-    return true;
-}
-
 bool lsm6dsk320xSpiAccDetect(accDev_t *acc)
 {
     if (acc->mpuDetectionResult.sensor != LSM6DSK320X_SPI) {
         return false;
     }
 
-    acc->initFn = lsm6dsk320xAccInit;
-    acc->readFn = lsm6dsk320xAccReadSPI;
+    acc->initFn = lsm6dsv16xAccInit;
+    acc->readFn = lsm6dsv16xAccReadSPI;
 
     return true;
 }
@@ -1199,12 +990,11 @@ static void lsm6dsk320xGyroInit(gyroDev_t *gyro)
     // Perform a software reset
     spiWriteReg(dev, LSM6DSV_CTRL3, LSM6DSV_CTRL3_SW_RESET);
 
-    // Wait for the device to be ready.
+    // Wait for the device to be ready, but don't let a stuck reset bit hang startup.
     uint8_t resetAttemptsRemaining = 50;
     while ((spiReadRegMsk(dev, LSM6DSV_CTRL3) & LSM6DSV_CTRL3_SW_RESET) && resetAttemptsRemaining--) {
         delay(1);
     }
-    // Give the sensor some extra stabilization time after reset.
     delay(35);
 
     // Autoincrement register address when doing block SPI reads and update continuously
@@ -1234,8 +1024,7 @@ static void lsm6dsk320xGyroInit(gyroDev_t *gyro)
                                     LSM6DSV_CTRL6_LPF1_G_BW_SHIFT) |
                 LSM6DSV_ENCODE_BITS(LSM6DSV_CTRL6_FS_G_2000DPS,
                                     LSM6DSV_CTRL6_FS_G_MASK,
-                                    LSM6DSV_CTRL6_FS_G_SHIFT) |
-                LSM6DSV_CTRL6_RESERVED_BIT3_MUST_BE_ONE);
+                                    LSM6DSV_CTRL6_FS_G_SHIFT));
 
     // Enable the accelerometer odr at 1kHz, in high accuracy
     spiWriteReg(dev, LSM6DSV_CTRL1,
@@ -1263,20 +1052,6 @@ static void lsm6dsk320xGyroInit(gyroDev_t *gyro)
 
     // Generate pulse on interrupt line, not requiring a read to clear
     spiWriteReg(dev, LSM6DSV_CTRL4, LSM6DSV_CTRL4_DRDY_PULSED);
-
-    // Enable the high-G accelerometer channel (K320X only): ±64g, 960Hz, output to registers
-    const uint8_t hgCtrl1Expected =
-                LSM6DSV_CTRL1_XL_HG_REGOUT_EN |
-                LSM6DSV_ENCODE_BITS(LSM6DSV_CTRL1_XL_HG_ODR_960HZ,
-                                    LSM6DSV_CTRL1_XL_HG_ODR_MASK,
-                                    LSM6DSV_CTRL1_XL_HG_ODR_SHIFT) |
-                LSM6DSV_ENCODE_BITS(LSM6DSV_CTRL1_XL_HG_FS_320G,
-                                    LSM6DSV_CTRL1_XL_HG_FS_MASK,
-                                    LSM6DSV_CTRL1_XL_HG_FS_SHIFT);
-    spiWriteReg(dev, LSM6DSV_CTRL1_XL_HG, hgCtrl1Expected);
-    delay(1);
-    const uint8_t hgCtrl1Readback = spiReadRegMsk(dev, LSM6DSV_CTRL1_XL_HG);
-    DEBUG_SET(DEBUG_ACC_HIGH_G, 3, (((uint16_t)hgCtrl1Expected) << 8) | hgCtrl1Readback);
 
     // From section 4.1, Mechanical characteristics, of the datasheet, G_So is 70mdps/LSB for FS = ±2000 dps.
     gyro->scale = 0.070f;
@@ -1306,7 +1081,7 @@ static void lsm6dsv16xGyroInit(gyroDev_t *gyro)
     // Perform a software reset
     spiWriteReg(dev, LSM6DSV_CTRL3, LSM6DSV_CTRL3_SW_RESET);
 
-    // Wait for the device to be ready (with timeout protection).
+    // Wait for the device to be ready, but don't let a stuck reset bit hang startup.
     uint8_t resetAttemptsRemaining = 50;
     while ((spiReadRegMsk(dev, LSM6DSV_CTRL3) & LSM6DSV_CTRL3_SW_RESET) && resetAttemptsRemaining--) {
         delay(1);
@@ -1465,4 +1240,222 @@ bool lsm6dsk320xSpiGyroDetect(gyroDev_t *gyro)
     return true;
 }
 
-#endif // USE_ACCGYRO_LSM6DSV16X || USE_ACCGYRO_LSM6DSK320X
+#ifdef USE_ACCGYRO_SCS3304
+
+#define SCS3304_WHO_AM_I_CONST (0x6B)
+
+uint8_t scs3304SpiDetect(const extDevice_t *dev)
+{
+    const uint8_t whoAmI = spiReadRegMsk(dev, LSM6DSV_WHO_AM_I);
+
+    if (whoAmI != SCS3304_WHO_AM_I_CONST) {
+        return MPU_NONE;
+    }
+
+    return SCS3304_SPI;
+}
+
+// ASM330LHH register layout (LSM6DSO-style) — completely different from LSM6DSV16X:
+//   CTRL1_XL (10h): [7:4]=ODR_XL, [3:2]=FS_XL, [1]=LPF2_XL_EN, [0]=0
+//     FS_XL: 00=±2g, 01=±16g(!), 10=±4g, 11=±8g (non-monotonic)
+//   CTRL2_G  (11h): [7:4]=ODR_G, [3:2]=FS_G, [1]=FS_125, [0]=FS_4000
+//     FS_G: 00=±250, 01=±500, 10=±1000, 11=±2000 dps
+//   CTRL4_C  (13h): [1]=LPF1_SEL_G (gyro LPF1 enable — NOT in CTRL7!)
+//   CTRL6_G  (15h): [2:0]=FTYPE (LPF1 BW — NOT in bits[6:4]! No FS_G here!)
+//   CTRL8_XL (17h): accel HP/LPF2 config only (NO FS_XL bits!)
+//   COUNTER_BDR_REG1 (0Bh): [7]=dataready_pulsed (NOT in CTRL4!)
+
+static void scs3304GyroInit(gyroDev_t *gyro)
+{
+    const extDevice_t *dev = &gyro->dev;
+
+    spiSetClkDivisor(dev, spiCalculateDivider(LSM6DSV16X_MAX_SPI_CLK_HZ));
+
+    spiWriteReg(dev, LSM6DSV_CTRL3, LSM6DSV_CTRL3_SW_RESET);
+
+    uint8_t resetAttemptsRemaining = 50;
+    while ((spiReadRegMsk(dev, LSM6DSV_CTRL3) & LSM6DSV_CTRL3_SW_RESET) && resetAttemptsRemaining--) {
+        delay(1);
+    }
+    delay(35);
+
+    // CTRL3_C (12h): BDU + IF_INC (same bit positions as LSM6DSV16X)
+    spiWriteReg(dev, LSM6DSV_CTRL3, LSM6DSV_CTRL3_IF_INC | LSM6DSV_CTRL3_BDU);
+
+    // CTRL1_XL (10h): ODR=1667Hz, FS_XL=±16g, LPF2=off
+    // ODR_XL[3:0]=1000(1667Hz), FS_XL[1:0]=01(±16g), LPF2_XL_EN=0 → 0x84
+    spiWriteReg(dev, LSM6DSV_CTRL1, 0x84);
+
+    // CTRL2_G (11h): ODR=6667Hz, FS_G=±2000dps, FS_125=0, FS_4000=0
+    // ODR_G[3:0]=1010(6667Hz), FS_G[1:0]=11(±2000dps) → 0xAC
+    spiWriteReg(dev, LSM6DSV_CTRL2, 0xAC);
+
+    // CTRL4_C (13h): LPF1_SEL_G=1 (enable gyro LPF1 filter)
+    // On ASM330LHH, LPF1 enable is bit 1 of CTRL4, NOT CTRL7
+    spiWriteReg(dev, LSM6DSV_CTRL4, 0x02);
+
+    // CTRL6_G (15h): FTYPE[2:0] = LPF1 bandwidth (bits[2:0], NOT bits[6:4]!)
+    // ASM330LHH Table 53 bandwidth @6.67kHz:
+    //   FTYPE 000=297Hz, 001=223Hz, 010=154Hz, 011=470Hz
+    //   FTYPE 100-111 = NA (invalid @6.67kHz!)
+    uint8_t ftypeOptions[GYRO_HARDWARE_LPF_COUNT] = {
+            [GYRO_HARDWARE_LPF_NORMAL] = 0,      // 297Hz (closest to MPU6000's 250Hz)
+            [GYRO_HARDWARE_LPF_OPTION_1] = 2,     // 154Hz
+            [GYRO_HARDWARE_LPF_OPTION_2] = 1,     // 223Hz
+#ifdef USE_GYRO_DLPF_EXPERIMENTAL
+            [GYRO_HARDWARE_LPF_EXPERIMENTAL] = 3   // 470Hz
+#endif
+    };
+    spiWriteReg(dev, LSM6DSV_CTRL6, ftypeOptions[gyroConfig()->gyro_hardware_lpf] & 0x07);
+
+    // CTRL7_G (16h): leave at default 0x00
+    // Do NOT write here — multiple "must be 0" bits; LPF1 enable is in CTRL4
+
+    // CTRL8_XL (17h): leave at default 0x00
+    // FS_XL is in CTRL1, NOT here; bit 1 must be 0
+
+    // CTRL9_XL (18h): leave at default 0xE0
+    // This register is DEN config on ASM330LHH, NOT LPF2 enable
+
+    // COUNTER_BDR_REG1 (0Bh): dataready_pulsed=1 (bit 7)
+    // Pulsed data-ready mode (75μs pulses) for reliable EXTI detection
+    spiWriteReg(dev, LSM6DSV_COUNTER_BDR_REG1, 0x80);
+
+    gyro->scale = 0.070f;
+
+    spiWriteReg(dev, LSM6DSV_INT1_CTRL, LSM6DSV_INT1_CTRL_INT1_DRDY_G);
+
+    mpuGyroInit(gyro);
+}
+
+bool scs3304SpiAccDetect(accDev_t *acc)
+{
+    if (acc->mpuDetectionResult.sensor != SCS3304_SPI) {
+        return false;
+    }
+
+    acc->initFn = lsm6dsv16xAccInit;
+    acc->readFn = lsm6dsv16xAccReadSPI;
+
+    return true;
+}
+
+bool scs3304SpiGyroDetect(gyroDev_t *gyro)
+{
+    if (gyro->mpuDetectionResult.sensor != SCS3304_SPI) {
+        return false;
+    }
+
+    gyro->initFn = scs3304GyroInit;
+    gyro->readFn = lsm6dsv16xGyroReadSPI;
+
+    return true;
+}
+
+#endif // USE_ACCGYRO_SCS3304
+
+#ifdef USE_ACCGYRO_SCS3302
+
+#define SCS3302_WHO_AM_I_CONST (0x65)
+
+uint8_t scs3302SpiDetect(const extDevice_t *dev)
+{
+    const uint8_t whoAmI = spiReadRegMsk(dev, LSM6DSV_WHO_AM_I);
+
+    if (whoAmI != SCS3302_WHO_AM_I_CONST) {
+        return MPU_NONE;
+    }
+
+    return SCS3302_SPI;
+}
+
+static void scs3302GyroInit(gyroDev_t *gyro)
+{
+    const extDevice_t *dev = &gyro->dev;
+
+    uint8_t lpf1BandwidthOptions[GYRO_HARDWARE_LPF_COUNT] = {
+            [GYRO_HARDWARE_LPF_NORMAL] = LSM6DSV_CTRL6_LPF1_G_BW_0,
+            [GYRO_HARDWARE_LPF_OPTION_1] = LSM6DSV_CTRL6_LPF1_G_BW_2,
+            [GYRO_HARDWARE_LPF_OPTION_2] = LSM6DSV_CTRL6_LPF1_G_BW_1,
+#ifdef USE_GYRO_DLPF_EXPERIMENTAL
+            [GYRO_HARDWARE_LPF_EXPERIMENTAL] = LSM6DSV_CTRL6_LPF1_G_BW_3
+#endif
+    };
+
+    spiSetClkDivisor(dev, spiCalculateDivider(LSM6DSV16X_MAX_SPI_CLK_HZ));
+
+    spiWriteReg(dev, LSM6DSV_CTRL3, LSM6DSV_CTRL3_SW_RESET);
+
+    uint8_t resetAttemptsRemaining = 50;
+    while ((spiReadRegMsk(dev, LSM6DSV_CTRL3) & LSM6DSV_CTRL3_SW_RESET) && resetAttemptsRemaining--) {
+        delay(1);
+    }
+    delay(40);
+
+    spiWriteReg(dev, LSM6DSV_CTRL3, LSM6DSV_CTRL3_IF_INC | LSM6DSV_CTRL3_BDU);
+
+    spiWriteReg(dev, LSM6DSV_HAODR_CFG,
+                LSM6DSV_ENCODE_BITS(LSM6DSV_HAODR_MODE1,
+                                    LSM6DSV_HAODR_CFG_HAODR_SEL_MASK,
+                                    LSM6DSV_HAODR_CFG_HAODR_SEL_SHIFT));
+
+    // LSM6DSV32X CTRL8 register layout differs from LSM6DSV16X:
+    //   bit 2 must be 1 (DSV16X requires 0)
+    //   FS_XL encoding: 00=±4g, 01=±8g, 10=±16g, 11=±32g (DSV16X: 00=±2g, 01=±4g, 10=±8g, 11=±16g)
+    // Set FS_XL=10 (±16g) with bit2=1 → 0x06
+    spiWriteReg(dev, LSM6DSV_CTRL8, 0x06);
+
+    // HIGH_ACCURACY mode + 1kHz accel ODR (HAODR_MODE1: ODR_XL=9 → 1000Hz)
+    spiWriteReg(dev, LSM6DSV_CTRL1, 0x19);
+
+    // HIGH_ACCURACY mode + 8kHz gyro ODR (HAODR_MODE1: ODR_G=12 → 8000Hz)
+    spiWriteReg(dev, LSM6DSV_CTRL2, 0x1C);
+
+    spiWriteReg(dev, LSM6DSV_CTRL6,
+                LSM6DSV_ENCODE_BITS(lpf1BandwidthOptions[gyroConfig()->gyro_hardware_lpf],
+                                    LSM6DSV_CTRL6_LPF1_G_BW_MASK,
+                                    LSM6DSV_CTRL6_LPF1_G_BW_SHIFT) |
+                LSM6DSV_ENCODE_BITS(LSM6DSV_CTRL6_FS_G_2000DPS,
+                                    LSM6DSV_CTRL6_FS_G_MASK,
+                                    LSM6DSV_CTRL6_FS_G_SHIFT));
+
+    spiWriteReg(dev, LSM6DSV_CTRL7, LSM6DSV_CTRL7_LPF1_G_EN);
+
+    spiWriteReg(dev, LSM6DSV_CTRL9, LSM6DSV_CTRL9_LPF2_XL_EN);
+
+    spiWriteReg(dev, LSM6DSV_CTRL4, LSM6DSV_CTRL4_DRDY_PULSED);
+
+    gyro->scale = 0.070f;
+
+    spiWriteReg(dev, LSM6DSV_INT1_CTRL, LSM6DSV_INT1_CTRL_INT1_DRDY_G);
+
+    mpuGyroInit(gyro);
+}
+
+bool scs3302SpiAccDetect(accDev_t *acc)
+{
+    if (acc->mpuDetectionResult.sensor != SCS3302_SPI) {
+        return false;
+    }
+
+    acc->initFn = lsm6dsv16xAccInit;
+    acc->readFn = lsm6dsv16xAccReadSPI;
+
+    return true;
+}
+
+bool scs3302SpiGyroDetect(gyroDev_t *gyro)
+{
+    if (gyro->mpuDetectionResult.sensor != SCS3302_SPI) {
+        return false;
+    }
+
+    gyro->initFn = scs3302GyroInit;
+    gyro->readFn = lsm6dsv16xGyroReadSPI;
+
+    return true;
+}
+
+#endif // USE_ACCGYRO_SCS3302
+
+#endif // USE_ACCGYRO_LSM6DSV16X || USE_ACCGYRO_LSM6DSK320X || USE_ACCGYRO_SCS3304 || USE_ACCGYRO_SCS3302

@@ -389,6 +389,12 @@ static gyroSpiDetectFn_t gyroSpiDetectFnTable[] = {
 #ifdef USE_ACCGYRO_ICM42607
     icm42607SpiDetect,
 #endif
+#ifdef USE_ACCGYRO_SCS3304
+    scs3304SpiDetect,
+#endif
+#ifdef USE_ACCGYRO_SCS3302
+    scs3302SpiDetect,
+#endif
     NULL // Avoid an empty array
 };
 

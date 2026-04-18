@@ -240,7 +240,8 @@ retry:
                 accHardware = ACC_IIM42653;
                 break;
             case ICM_40608_SPI:
-                accHardware = ACC_ICM42688P;
+                // Report as ICM40609D so BF Configurator shows a recognizable name.
+                accHardware = ACC_ICM40609D;
                 break;
             default:
                 accHardware = ACC_NONE;
@@ -319,7 +320,26 @@ retry:
 #ifdef USE_ACCGYRO_LSM6DSK320X
     case ACC_LSM6DSK320X:
         if (lsm6dsk320xSpiAccDetect(dev)) {
-            accHardware = ACC_LSM6DSK320X;
+            // Report as LSM6DSV16X so older Configurators (which don't know LSM6DSK320X enum index) display it correctly.
+            accHardware = ACC_LSM6DSV16X;
+            break;
+        }
+        FALLTHROUGH;
+#endif
+
+#ifdef USE_ACCGYRO_SCS3304
+    case ACC_SCS3304:
+        if (scs3304SpiAccDetect(dev)) {
+            accHardware = ACC_SCS3304;
+            break;
+        }
+        FALLTHROUGH;
+#endif
+
+#ifdef USE_ACCGYRO_SCS3302
+    case ACC_SCS3302:
+        if (scs3302SpiAccDetect(dev)) {
+            accHardware = ACC_SCS3302;
             break;
         }
         FALLTHROUGH;
