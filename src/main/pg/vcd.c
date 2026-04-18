@@ -32,11 +32,15 @@ PG_REGISTER_WITH_RESET_FN(vcdProfile_t, vcdProfile, PG_VCD_CONFIG, 0);
 
 void pgResetFn_vcdProfile(vcdProfile_t *vcdProfile)
 {
-    // Make it obvious on the configurator that the FC doesn't support HD
-#ifdef USE_OSD_HD
+    // Allow a target to override the default video system when its onboard
+    // hardware needs a non-standard startup mode (e.g. AIO boards with both
+    // analog MAX7456 and HD support compiled in, which must default to AUTO
+    // so init.c doesn't force-switch to MSP and blank the analog OSD).
+#if defined(DEFAULT_VIDEO_SYSTEM)
+    vcdProfile->video_system = DEFAULT_VIDEO_SYSTEM;
+#elif defined(USE_OSD_HD)
     vcdProfile->video_system = VIDEO_SYSTEM_HD;
 #else
     vcdProfile->video_system = VIDEO_SYSTEM_AUTO;
 #endif
-
 }

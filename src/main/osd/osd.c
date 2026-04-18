@@ -415,17 +415,20 @@ void pgResetFn_osdConfig(osdConfig_t *osdConfig)
     osdConfig->aux_scale = 200;
     osdConfig->aux_symbol = 'A';
 
-    // Make it obvious on the configurator that the FC doesn't support HD
-#ifdef USE_OSD_HD
+    // If the target explicitly sets DEFAULT_OSD_DISPLAYPORT_DEVICE, respect it
+    // regardless of whether HD is compiled in (e.g. AIO boards with analog MAX7456
+    // that still want HD support for digital VTX but default to analog/auto).
+#ifdef DEFAULT_OSD_DISPLAYPORT_DEVICE
+    osdConfig->displayPortDevice = DEFAULT_OSD_DISPLAYPORT_DEVICE;
+    osdConfig->canvas_cols = OSD_SD_COLS;
+    osdConfig->canvas_rows = OSD_SD_ROWS;
+#elif defined(USE_OSD_HD)
+    // Make it obvious on the configurator that the FC supports HD
     osdConfig->displayPortDevice = OSD_DISPLAYPORT_DEVICE_MSP;
     osdConfig->canvas_cols = OSD_HD_COLS;
     osdConfig->canvas_rows = OSD_HD_ROWS;
 #else
-#ifdef DEFAULT_OSD_DISPLAYPORT_DEVICE
-    osdConfig->displayPortDevice = DEFAULT_OSD_DISPLAYPORT_DEVICE;
-#else
     osdConfig->displayPortDevice = OSD_DISPLAYPORT_DEVICE_AUTO;
-#endif
     osdConfig->canvas_cols = OSD_SD_COLS;
     osdConfig->canvas_rows = OSD_SD_ROWS;
 #endif
