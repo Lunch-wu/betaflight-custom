@@ -99,6 +99,12 @@ uint16_t gyroSetSampleRate(gyroDev_t *gyro)
             gyroSampleRateHz = 6664;
             accSampleRateHz = 833;
             break;
+        case SCS3302_SPI:
+            // 实验降半速到 3840Hz (~4kHz) 验证 F722 CPU 是否瓶颈
+            gyro->gyroRateKHz = GYRO_RATE_3200_Hz;  // 用最接近的枚举值（实际为 3840Hz）
+            gyroSampleRateHz = 3840;
+            accSampleRateHz = 480;
+            break;
         default:
             gyro->gyroRateKHz = GYRO_RATE_8_kHz;
             gyroSampleRateHz = 8000;
